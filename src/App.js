@@ -1,43 +1,16 @@
-import logo from './logo.svg';
 import './App.css';
-import { useDrag } from 'react-dnd';
-// import { ItemTypes } from './Constants'
-
-function Node({ isDragging, text }) {
-  const [{ opacity }, dragRef] = useDrag(
-    () => ({
-      // type: ItemTypes.NODE,
-      item: { text },
-      collect: (monitor) => ({
-        opacity: monitor.isDragging() ? 0.5 : 1
-      })
-    }),
-    []
-  )
-  return (
-    <div ref={dragRef} style={{ opacity }}>
-      {text}
-    </div>
-  )
-}
+import { Container } from './Container.js'
+import { DndProvider } from 'react-dnd'
+import { HTML5Backend } from 'react-dnd-html5-backend'
 
 function App() {
   return (
     <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
+    <DndProvider backend={HTML5Backend}>
+      <div style={{ overflow: 'hidden', clear: 'both' }}>
+        <Container></Container>
+      </div>
+      </DndProvider>
     </div>
   );
 }
