@@ -3,9 +3,10 @@
   windows_subsystem = "windows"
 )]
 
-use tauri;
+use tauri::{self, Manager};
 use std::{
   sync::{Arc, Mutex},
+  fs::read_to_string,
 };
 
 struct State {
@@ -13,10 +14,13 @@ struct State {
 }
 
 #[tauri::command]
-fn my_custom_command(state: tauri::State<Arc<Mutex<State>>>, invoke_message: String) {
+fn my_custom_command(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle, file_path: String) {
   let mut state = state.lock().unwrap();
-  println!("I was invoked from JS, with this message: {}. x = {}", invoke_message, state.x);
+
+  let data = state.x.to_string() + "  " + &read_to_string(file_path).unwrap();
   state.x += 1;
+
+  app.emit_all("show-data", data).unwrap();
 }
 
 fn main() {
