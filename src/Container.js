@@ -4,8 +4,8 @@ import { useDrop } from 'react-dnd'
 import { Node } from './Node.js'
 import { ItemTypes } from './ItemTypes.js'
 const styles = {
-  width: 300,
-  height: 300,
+  width: 800,
+  height: 800,
   border: '1px solid black',
   position: 'relative',
 }

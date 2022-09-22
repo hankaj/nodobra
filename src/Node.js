@@ -2,7 +2,8 @@ import { useDrag } from 'react-dnd'
 import { ItemTypes } from './ItemTypes.js'
 const style = {
   position: 'absolute',
-  border: '1px dashed gray',
+  border: '1px solid gray',
+  borderRadius: '5px',
   backgroundColor: 'white',
   padding: '0.5rem 1rem',
   cursor: 'move',
