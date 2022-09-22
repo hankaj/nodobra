@@ -1,16 +1,15 @@
 import './App.css';
-import { Container } from './Container.js'
-import { DndProvider } from 'react-dnd'
-import { HTML5Backend } from 'react-dnd-html5-backend'
+import { invoke } from '@tauri-apps/api/tauri';
 
 function App() {
+  const onClick = () => {
+    console.log("ASDFASDF")
+    invoke('my_custom_command', { invokeMessage: 'Hello!' })
+  };
+
   return (
     <div className="App">
-    <DndProvider backend={HTML5Backend}>
-      <div style={{ overflow: 'hidden', clear: 'both' }}>
-        <Container></Container>
-      </div>
-      </DndProvider>
+      <button onClick={onClick}>CLICK</button>
     </div>
   );
 }
