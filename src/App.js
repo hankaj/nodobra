@@ -5,7 +5,7 @@ import { open } from '@tauri-apps/api/dialog';
 import { useEffect } from "react";
 
 function App() {
-  const txt = document.getElementById("txt");
+  let txt;
 
   const onClick = async () => {
     const selected = await open({
@@ -21,8 +21,10 @@ function App() {
 
   useEffect(() => {
     (async () => {
+      txt = document.getElementById("txt");
+
       const unlisten = await listen('show-data', (event) => {
-        txt.innerHTML = JSON.stringify(event.payload);
+        txt.innerHTML = event.payload;
       });
     })();
   })
@@ -30,7 +32,7 @@ function App() {
   return (
     <div className="App">
       <button onClick={onClick}>CLICK</button>
-      <p id="txt"></p>
+      <pre id="txt"></pre>
     </div>
   );
 }
