@@ -10,6 +10,7 @@ import Average from './components/nodes/Average';
 
 function App() {
   let [nodes, setNodes] = useState([]);
+  let [result, setResult] = useState("");
 
   const addLoader = async () => {
     const selected = await open({
@@ -28,7 +29,8 @@ function App() {
     (async () => {
       await listen('show-data', (event) => {
         console.log(event.payload)
-        setNodes(event.payload);
+        setNodes(event.payload.nodes);
+        setResult(event.payload.result);
       });
     })();
   })
@@ -51,7 +53,7 @@ function App() {
         <button onClick={addMultiplier}>add multiplier</button>
         <button onClick={addAverager}>add averager</button>
       </div>
-      <pre id="txt"></pre>
+      <pre>{result}</pre>
     </div>
   );
 }

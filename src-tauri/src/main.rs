@@ -29,6 +29,8 @@ enum Node {
   Average {},
 }
 
+use Node::*;
+
 fn serialize_columns<S>(df: &DataFrame, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
   let columns = df.get_column_names();
 
@@ -57,7 +59,39 @@ impl Node {
 }
 
 fn send_state(app: &tauri::AppHandle, state: &State) {
-  app.emit_all("show-data", state).unwrap();
+  let mut result: Option<DataFrame> = None;
+
+  for node in state.nodes.iter() {
+    match node {
+      LoadData { df } => {
+        result = Some(df.clone());
+      },
+      Multiply {} => if let Some(ref mut df) = result {
+        df.replace_at_idx(0, (&df[0]) * 5.0);
+      },
+      Average {} => if let Some(ref mut df) = result {
+        *df = df.sum();
+      }
+    }
+  }
+
+  #[derive(Serialize, Clone)]
+  struct Data<'a> {
+    nodes: &'a State,
+    #[serde(serialize_with = "df_to_string")]
+    result: &'a Option<DataFrame>,
+  }
+
+  let data = Data { nodes: state, result: &result };
+
+  app.emit_all("show-data", data).unwrap();
+}
+
+fn df_to_string<S>(df: &Option<DataFrame>, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+  match df {
+    Some(df) => serializer.serialize_str(&df.to_string()),
+    None => serializer.serialize_none(),
+  }
 }
 
 #[tauri::command]
