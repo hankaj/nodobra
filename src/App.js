@@ -15,7 +15,7 @@ function App() {
     if (selected === null) {
       txt.innerHTML = "cancelled";
     } else {
-      invoke('my_custom_command', { filePath: selected })
+      invoke('load_csv', { filePath: selected })
     }
   };
 
@@ -31,7 +31,7 @@ function App() {
 
   return (
     <div className="App">
-      <button onClick={onClick}>CLICK</button>
+      <button onClick={onClick}>load CSV</button>
       <pre id="txt"></pre>
     </div>
   );

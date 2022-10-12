@@ -6,31 +6,47 @@
 use tauri::{self, Manager};
 use std::{
   sync::{Arc, Mutex},
-  fs::read_to_string,
+  path::PathBuf,
 };
+use polars::prelude::*;
 
 struct State {
-  x: i32,
+  nodes: Vec<Node>,
+}
+
+struct Node {
+  df: DataFrame,
+}
+
+impl Node {
+  fn new<P>(file_path: P) -> Self where P: Into<PathBuf> {
+    let df = CsvReader::from_path(file_path)
+      .unwrap()
+      .has_header(true)
+      .finish()
+      .unwrap();
+
+    Self {
+      df
+    }
+  }
 }
 
 #[tauri::command]
-fn my_custom_command(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle, file_path: String) {
+fn load_csv(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle, file_path: String) {
   let mut state = state.lock().unwrap();
+  state.nodes.push(Node::new(file_path));
 
-  let data = state.x.to_string() + "  " + &read_to_string(file_path).unwrap();
-  state.x += 1;
-
+  let data = state.nodes.iter().map(|node| node.df.get_column_names().join(", ")).collect::<Vec<_>>().join("\n");
   app.emit_all("show-data", data).unwrap();
 }
 
 fn main() {
-  println!("asdf");
-
-  let state = Arc::new(Mutex::new(State { x: 1 }));
+  let state = Arc::new(Mutex::new(State { nodes: vec![] }));
 
   tauri::Builder::default()
     .manage(state)
-    .invoke_handler(tauri::generate_handler![my_custom_command])
+    .invoke_handler(tauri::generate_handler![load_csv])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }
