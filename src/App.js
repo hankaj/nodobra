@@ -21,16 +21,21 @@ function App() {
       invoke('add_loader', { filePath: selected })
     }
   };
-
   const addMultiplier = async () => invoke('add_multiplier');
   const addAverager = async () => invoke('add_averager');
 
+  const calculate = async () => invoke('calculate');
+
   useEffect(() => {
     (async () => {
-      await listen('show-data', (event) => {
-        console.log(event.payload)
-        setNodes(event.payload.nodes);
-        setResult(event.payload.result);
+      await listen('show-nodes', (event) => {
+        console.log(event.payload);
+        setNodes(event.payload);
+      });
+
+      await listen('show-result', (event) => {
+        console.log(event.payload);
+        setResult(event.payload);
       });
     })();
   })
@@ -40,11 +45,11 @@ function App() {
       {
         nodes.map(({ type, data }, i) => {
           if (type === "load-data") {
-            return <LoadData {...data} />;
+            return <LoadData {...data} key={i}/>;
           } else if (type === "multiply") {
-            return <Multiply {...data} />;
+            return <Multiply {...data} key={i}/>;
           } else if (type === "average") {
-            return <Average {...data} />;
+            return <Average {...data} key={i}/>;
           }
         })
       }
@@ -52,6 +57,7 @@ function App() {
         <button onClick={addLoader}>add loader</button>
         <button onClick={addMultiplier}>add multiplier</button>
         <button onClick={addAverager}>add averager</button>
+        <button onClick={calculate}>calculate</button>
       </div>
       <pre>{result}</pre>
     </div>

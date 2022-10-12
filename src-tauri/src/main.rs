@@ -25,8 +25,12 @@ enum Node {
         #[serde(rename = "columns", serialize_with = "serialize_columns")]
         df: DataFrame,
     },
-    Multiply {},
-    Average {},
+    Multiply {
+        source: Option<usize>,
+    },
+    Average {
+        source: Option<usize>,
+    },
 }
 
 use Node::*;
@@ -61,14 +65,45 @@ impl Node {
     }
 
     fn multiply() -> Self {
-        Node::Multiply {}
+        Node::Multiply { source: None }
     }
     fn average() -> Self {
-        Node::Average {}
+        Node::Average { source: None }
     }
 }
 
-fn send_state(app: &tauri::AppHandle, state: &State) {
+fn show_nodes(app: &tauri::AppHandle, state: &State) {
+    app.emit_all("show-nodes", state).unwrap();
+}
+
+#[tauri::command]
+fn add_loader(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle, file_path: String) {
+    let mut state = state.lock().unwrap();
+    state.nodes.push(Node::load_data(file_path));
+
+    show_nodes(&app, &state);
+}
+
+#[tauri::command]
+fn add_multiplier(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle) {
+    let mut state = state.lock().unwrap();
+    state.nodes.push(Node::multiply());
+
+    show_nodes(&app, &state);
+}
+
+#[tauri::command]
+fn add_averager(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle) {
+    let mut state = state.lock().unwrap();
+    state.nodes.push(Node::average());
+
+    show_nodes(&app, &state);
+}
+
+#[tauri::command]
+fn calculate(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle) {
+    let mut state = state.lock().unwrap();
+
     let mut result: Option<DataFrame> = None;
 
     for node in state.nodes.iter() {
@@ -76,12 +111,12 @@ fn send_state(app: &tauri::AppHandle, state: &State) {
             LoadData { df } => {
                 result = Some(df.clone());
             }
-            Multiply {} => {
+            Multiply { .. } => {
                 if let Some(ref mut df) = result {
                     df.replace_at_idx(0, (&df[0]) * 5.0);
                 }
             }
-            Average {} => {
+            Average { .. } => {
                 if let Some(ref mut df) = result {
                     *df = df.sum();
                 }
@@ -90,18 +125,13 @@ fn send_state(app: &tauri::AppHandle, state: &State) {
     }
 
     #[derive(Serialize, Clone)]
-    struct Data<'a> {
-        nodes: &'a State,
+    #[serde(transparent)]
+    struct ExecutionResult {
         #[serde(serialize_with = "df_to_string")]
-        result: &'a Option<DataFrame>,
+        result: Option<DataFrame>,
     }
 
-    let data = Data {
-        nodes: state,
-        result: &result,
-    };
-
-    app.emit_all("show-data", data).unwrap();
+    app.emit_all("show-result", ExecutionResult { result }).unwrap();
 }
 
 fn df_to_string<S>(df: &Option<DataFrame>, serializer: S) -> Result<S::Ok, S::Error>
@@ -114,30 +144,6 @@ where
     }
 }
 
-#[tauri::command]
-fn add_loader(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle, file_path: String) {
-    let mut state = state.lock().unwrap();
-    state.nodes.push(Node::load_data(file_path));
-
-    send_state(&app, &state);
-}
-
-#[tauri::command]
-fn add_multiplier(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle) {
-    let mut state = state.lock().unwrap();
-    state.nodes.push(Node::multiply());
-
-    send_state(&app, &state);
-}
-
-#[tauri::command]
-fn add_averager(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle) {
-    let mut state = state.lock().unwrap();
-    state.nodes.push(Node::average());
-
-    send_state(&app, &state);
-}
-
 fn main() {
     let state = Arc::new(Mutex::new(State { nodes: vec![] }));
 
@@ -146,7 +152,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             add_loader,
             add_averager,
-            add_multiplier
+            add_multiplier,
+            calculate,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
