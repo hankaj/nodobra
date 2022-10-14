@@ -77,6 +77,7 @@ checksum = "b9a8f622bcf6ff3df478e9deba3e03e4e04b300f8e6a139e192c05fa3490afc7"
 name = "app"
 version = "0.1.0"
 dependencies = [
+ "names",
  "polars",
  "serde",
  "serde_json",
@@ -1798,6 +1799,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "names"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7bddcd3bf5144b6392de80e04c347cd7fab2508f6df16a85fc496ecd5cec39bc"
+dependencies = [
+ "rand 0.8.5",
 ]
 
 [[package]]
