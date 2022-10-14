@@ -5,6 +5,12 @@ function Multiply({ name, uuid, nodes, source }) {
     invoke("connect", { nodeUuid: uuid, sourceUuid: e.target.value });
   };
 
+  const onUpdate = (e) => {
+    const times = parseInt(e.target.value) || null;
+    const patch = { uuid, kind: "multiply", data: { times } };
+    invoke("update_node", { patch });
+  };
+
   return (
     <div
       style={{
@@ -31,6 +37,10 @@ function Multiply({ name, uuid, nodes, source }) {
               </option>
             ))}
         </select>
+      </div>
+      <div style={{ display: "flex", flexDirection: "row" }}>
+        <pre>times: </pre>
+        <input type="text" onChange={onUpdate}></input>
       </div>
     </div>
   );

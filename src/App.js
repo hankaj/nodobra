@@ -4,9 +4,6 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/api/dialog";
 import { useEffect, useState } from "react";
 
-import LoadData from "./components/nodes/LoadData";
-import Multiply from "./components/nodes/Multiply";
-import Average from "./components/nodes/Average";
 import Board from "./components/Board";
 
 function App() {

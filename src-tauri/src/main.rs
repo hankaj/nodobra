@@ -7,15 +7,15 @@ use polars::prelude::*;
 use serde::Serialize;
 use std::{
     collections::HashMap,
-    path::PathBuf,
     sync::{Arc, Mutex},
 };
 use tauri::{self, Manager};
 use uuid::Uuid as UUID;
-use names::Generator;
 
+mod node;
 mod serialization;
 
+use node::{nodes::*, Node, NodePatch, NodePatchWrapper};
 use serialization::*;
 
 #[derive(Serialize, Debug)]
@@ -26,56 +26,13 @@ struct State {
 
 impl State {
     fn new() -> Self {
-        Self { nodes: HashMap::new() }
+        Self {
+            nodes: HashMap::new(),
+        }
     }
 
     fn add_node(&mut self, node: Node) {
         self.nodes.insert(UUID::new_v4(), node);
-    }
-}
-
-#[derive(Serialize, Debug)]
-#[serde(tag = "type", content = "data", rename_all = "snake_case")]
-enum Node {
-    LoadData {
-        name: String,
-        #[serde(rename = "columns", serialize_with = "serialize_columns")]
-        df: DataFrame,
-    },
-    Multiply {
-        name: String,
-        source: Option<UUID>,
-    },
-    Average {
-        name: String,
-        source: Option<UUID>,
-    },
-}
-
-use Node::*;
-
-impl Node {
-    fn load_data<P>(file_path: P) -> Self
-    where
-        P: Into<PathBuf>,
-    {
-        let df = CsvReader::from_path(file_path)
-            .unwrap()
-            .has_header(true)
-            .finish()
-            .unwrap();
-        let name = Generator::default().next().unwrap();
-
-        Node::LoadData { name, df }
-    }
-
-    fn multiply() -> Self {
-        let name = Generator::default().next().unwrap();
-        Node::Multiply { name, source: None }
-    }
-    fn average() -> Self {
-        let name = Generator::default().next().unwrap();
-        Node::Average { name, source: None }
     }
 }
 
@@ -112,17 +69,19 @@ fn apply_processing(nodes: &HashMap<UUID, Node>, uuid: UUID) -> Option<DataFrame
     let node = &nodes[&uuid];
 
     match node {
-        LoadData { df, .. } => return Some(df.clone()),
-        Multiply { source, .. } => source.and_then(|source| {
-            apply_processing(nodes, source).map(|mut df| {
-                df.replace_at_idx(0, (&df[0]) * 5).unwrap();
-            
-                return df;
-        })
-        }),
-        Average { source, .. } => source.and_then(|source| {
-            apply_processing(nodes, source).map(|df| df.sum())
-        }),
+        Node::LoadData(LoadData { df, .. }) => return Some(df.clone()),
+        Node::Multiply(Multiply { source, times, .. }) => source
+            .and_then(|source| times.map(|times| (source, times)))
+            .and_then(|(source, times)| {
+                apply_processing(nodes, source).map(|mut df| {
+                    df.replace_at_idx(0, (&df[0]) * times).unwrap();
+
+                    return df;
+                })
+            }),
+        Node::Average(Average { source, .. }) => {
+            source.and_then(|source| apply_processing(nodes, source).map(|df| df.sum()))
+        }
     }
 }
 
@@ -133,20 +92,30 @@ fn calculate(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle, uuid
 
     let result = apply_processing(&state.nodes, UUID::parse_str(&uuid).unwrap());
 
-    app.emit_all("show_result", ResultSerializer { result, meta: uuid }).unwrap();
+    app.emit_all("show_result", ResultSerializer { result, meta: uuid })
+        .unwrap();
 }
 
 #[tauri::command]
-fn connect(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle, source_uuid: String, node_uuid: String) {
+fn connect(
+    state: tauri::State<Arc<Mutex<State>>>,
+    app: tauri::AppHandle,
+    source_uuid: String,
+    node_uuid: String,
+) {
     let mut state = state.lock().unwrap();
 
     let source_uuid = UUID::parse_str(&source_uuid).unwrap();
     let node_uuid = UUID::parse_str(&node_uuid).unwrap();
 
     match state.nodes.get_mut(&node_uuid).unwrap() {
-        LoadData { .. } => {},
-        Multiply { ref mut source, .. } => { *source = Some(source_uuid); }
-        Average { ref mut source, .. } => { *source = Some(source_uuid); }
+        Node::LoadData(LoadData { .. }) => {}
+        Node::Multiply(Multiply { ref mut source, .. }) => {
+            *source = Some(source_uuid);
+        }
+        Node::Average(Average { ref mut source, .. }) => {
+            *source = Some(source_uuid);
+        }
     }
 
     dbg!(&state.nodes);
@@ -157,6 +126,29 @@ fn connect(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle, source
 #[tauri::command]
 fn get_nodes(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle) {
     let mut state = state.lock().unwrap();
+
+    show_nodes(&app, &state);
+}
+
+#[tauri::command]
+fn update_node(
+    state: tauri::State<Arc<Mutex<State>>>,
+    app: tauri::AppHandle,
+    patch: NodePatchWrapper,
+) {
+    let NodePatchWrapper { uuid, inner: patch } = patch;
+    let mut state = state.lock().unwrap();
+
+    let node = (*state.nodes.get(&uuid).unwrap()).clone();
+
+    match patch.patch_node(node) {
+        Ok(node) => {
+            state.nodes.insert(uuid, node);
+        }
+        Err(e) => {
+            dbg!(e);
+        }
+    }
 
     show_nodes(&app, &state);
 }
@@ -173,6 +165,7 @@ fn main() {
             calculate,
             connect,
             get_nodes,
+            update_node,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
