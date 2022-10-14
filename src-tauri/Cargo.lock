@@ -82,6 +82,7 @@ dependencies = [
  "serde_json",
  "tauri",
  "tauri-build",
+ "uuid 1.2.1",
 ]
 
 [[package]]
@@ -3291,7 +3292,7 @@ dependencies = [
  "scopeguard",
  "serde",
  "unicode-segmentation",
- "uuid 1.1.2",
+ "uuid 1.2.1",
  "windows 0.37.0",
  "windows-implement",
  "x11-dl",
@@ -3355,7 +3356,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "url",
- "uuid 1.1.2",
+ "uuid 1.2.1",
  "webkit2gtk",
  "webview2-com",
  "windows 0.37.0",
@@ -3399,7 +3400,7 @@ dependencies = [
  "tauri-utils",
  "thiserror",
  "time 0.3.14",
- "uuid 1.1.2",
+ "uuid 1.2.1",
  "walkdir",
 ]
 
@@ -3432,7 +3433,7 @@ dependencies = [
  "serde_json",
  "tauri-utils",
  "thiserror",
- "uuid 1.1.2",
+ "uuid 1.2.1",
  "webview2-com",
  "windows 0.37.0",
 ]
@@ -3450,7 +3451,7 @@ dependencies = [
  "raw-window-handle",
  "tauri-runtime",
  "tauri-utils",
- "uuid 1.1.2",
+ "uuid 1.2.1",
  "webkit2gtk",
  "webview2-com",
  "windows 0.37.0",
@@ -3747,11 +3748,13 @@ checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
 
 [[package]]
 name = "uuid"
-version = "1.1.2"
+version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd6469f4314d5f1ffec476e05f17cc9a78bc7a27a6a857842170bdf8d6f98d2f"
+checksum = "feb41e78f93363bb2df8b0e86a2ca30eed7806ea16ea0c790d757cf93f79be83"
 dependencies = [
  "getrandom 0.2.7",
+ "rand 0.8.5",
+ "serde",
 ]
 
 [[package]]

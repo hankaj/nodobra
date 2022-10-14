@@ -9,7 +9,7 @@ import Multiply from './components/nodes/Multiply';
 import Average from './components/nodes/Average';
 
 function App() {
-  let [nodes, setNodes] = useState([]);
+  let [nodes, setNodes] = useState({ nodes: [], uuids: [] });
   let [result, setResult] = useState("");
 
   const addLoader = async () => {
@@ -24,18 +24,21 @@ function App() {
   const addMultiplier = async () => invoke('add_multiplier');
   const addAverager = async () => invoke('add_averager');
 
-  const calculate = async () => invoke('calculate');
+  const calculate = async (e) => {
+    const uuid = document.getElementById("node-selection").value;
+    console.log(`calculating ${uuid}`);
+    invoke('calculate', { uuid });
+  }
 
   useEffect(() => {
     (async () => {
       await listen('show-nodes', (event) => {
-        console.log(event.payload);
-        setNodes(event.payload);
+        let uuids = event.payload.map((node) => node.uuid);
+        setNodes({ nodes: event.payload, uuids });
       });
 
       await listen('show-result', (event) => {
-        console.log(event.payload);
-        setResult(event.payload);
+        setResult(event.payload.meta + "\n" + event.payload.result);
       });
     })();
   })
@@ -43,21 +46,29 @@ function App() {
   return (
     <div className="App">
       {
-        nodes.map(({ type, data }, i) => {
+        nodes.nodes.map(({ type, data, uuid }, i) => {
           if (type === "load-data") {
-            return <LoadData {...data} key={i}/>;
+            return <LoadData {...data} uuid={uuid} key={i}/>;
           } else if (type === "multiply") {
-            return <Multiply {...data} key={i}/>;
+            return <Multiply {...data} uuid={uuid} uuids={nodes.uuids} key={i}/>;
           } else if (type === "average") {
-            return <Average {...data} key={i}/>;
+            return <Average {...data} uuid={uuid} uuids={nodes.uuids} key={i}/>;
           }
+
+          return null;
         })
       }
       <div style={{ display: "flex", flexDirection: "row" }}>
         <button onClick={addLoader}>add loader</button>
         <button onClick={addMultiplier}>add multiplier</button>
         <button onClick={addAverager}>add averager</button>
+      </div>
+      <div style={{ display: "flex", flexDirection: "row" }}>
         <button onClick={calculate}>calculate</button>
+        <select id="node-selection">
+          <option value="" disabled selected hidden>select node</option>
+          {nodes.uuids.map((uuid, i) => <option value={uuid} key={i}>{uuid}</option>)}
+        </select>
       </div>
       <pre>{result}</pre>
     </div>

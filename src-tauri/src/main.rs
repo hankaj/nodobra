@@ -4,18 +4,24 @@
 )]
 
 use polars::prelude::*;
-use serde::{ser::SerializeSeq, Serialize, Serializer};
+use serde::Serialize;
 use std::{
     collections::HashMap,
     path::PathBuf,
     sync::{Arc, Mutex},
 };
 use tauri::{self, Manager};
+use uuid::Uuid as UUID;
+
+mod serialization;
+
+use serialization::*;
 
 #[derive(Serialize, Debug)]
 #[serde(transparent)]
 struct State {
-    nodes: Vec<Node>,
+    #[serde(serialize_with = "serialize_nodes")]
+    nodes: HashMap<UUID, Node>,
 }
 
 #[derive(Serialize, Debug)]
@@ -26,29 +32,14 @@ enum Node {
         df: DataFrame,
     },
     Multiply {
-        source: Option<usize>,
+        source: Option<UUID>,
     },
     Average {
-        source: Option<usize>,
+        source: Option<UUID>,
     },
 }
 
 use Node::*;
-
-fn serialize_columns<S>(df: &DataFrame, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let columns = df.get_column_names();
-
-    let mut seq = serializer.serialize_seq(Some(columns.len()))?;
-
-    for column in columns {
-        seq.serialize_element(column)?;
-    }
-
-    seq.end()
-}
 
 impl Node {
     fn load_data<P>(file_path: P) -> Self
@@ -79,7 +70,8 @@ fn show_nodes(app: &tauri::AppHandle, state: &State) {
 #[tauri::command]
 fn add_loader(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle, file_path: String) {
     let mut state = state.lock().unwrap();
-    state.nodes.push(Node::load_data(file_path));
+    let uuid = UUID::new_v4();
+    state.nodes.insert(uuid, Node::load_data(file_path));
 
     show_nodes(&app, &state);
 }
@@ -87,7 +79,8 @@ fn add_loader(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle, fil
 #[tauri::command]
 fn add_multiplier(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle) {
     let mut state = state.lock().unwrap();
-    state.nodes.push(Node::multiply());
+    let uuid = UUID::new_v4();
+    state.nodes.insert(uuid, Node::multiply());
 
     show_nodes(&app, &state);
 }
@@ -95,57 +88,61 @@ fn add_multiplier(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle)
 #[tauri::command]
 fn add_averager(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle) {
     let mut state = state.lock().unwrap();
-    state.nodes.push(Node::average());
+    let uuid = UUID::new_v4();
+    state.nodes.insert(uuid, Node::average());
 
     show_nodes(&app, &state);
 }
 
-#[tauri::command]
-fn calculate(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle) {
-    let mut state = state.lock().unwrap();
+fn apply_processing(nodes: &HashMap<UUID, Node>, uuid: UUID) -> Option<DataFrame> {
+    println!("processing {}", uuid);
+    let node = &nodes[&uuid];
 
-    let mut result: Option<DataFrame> = None;
-
-    for node in state.nodes.iter() {
-        match node {
-            LoadData { df } => {
-                result = Some(df.clone());
-            }
-            Multiply { .. } => {
-                if let Some(ref mut df) = result {
-                    df.replace_at_idx(0, (&df[0]) * 5.0);
-                }
-            }
-            Average { .. } => {
-                if let Some(ref mut df) = result {
-                    *df = df.sum();
-                }
-            }
-        }
+    match node {
+        LoadData { df } => return Some(df.clone()),
+        Multiply { source } => source.and_then(|source| {
+            apply_processing(nodes, source).map(|mut df| {
+                df.replace_at_idx(0, (&df[0]) * 5).unwrap();
+            
+                return df;
+        })
+        }),
+        Average { source } => source.and_then(|source| {
+            apply_processing(nodes, source).map(|df| df.sum())
+        }),
     }
-
-    #[derive(Serialize, Clone)]
-    #[serde(transparent)]
-    struct ExecutionResult {
-        #[serde(serialize_with = "df_to_string")]
-        result: Option<DataFrame>,
-    }
-
-    app.emit_all("show-result", ExecutionResult { result }).unwrap();
 }
 
-fn df_to_string<S>(df: &Option<DataFrame>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    match df {
-        Some(df) => serializer.serialize_str(&df.to_string()),
-        None => serializer.serialize_none(),
+#[tauri::command]
+fn calculate(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle, uuid: String) {
+    let mut state = state.lock().unwrap();
+    dbg!(&uuid);
+
+    let result = apply_processing(&state.nodes, UUID::parse_str(&uuid).unwrap());
+
+    app.emit_all("show-result", ResultSerializer { result, meta: uuid }).unwrap();
+}
+
+#[tauri::command]
+fn connect(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle, source_uuid: String, node_uuid: String) {
+    let mut state = state.lock().unwrap();
+
+    let source_uuid = UUID::parse_str(&source_uuid).unwrap();
+    let node_uuid = UUID::parse_str(&node_uuid).unwrap();
+
+    match state.nodes.get_mut(&node_uuid).unwrap() {
+        LoadData { .. } => {},
+        Multiply { ref mut source } => { *source = Some(source_uuid); }
+        Average { ref mut source } => { *source = Some(source_uuid); }
     }
+
+    dbg!(&state.nodes);
+
+    show_nodes(&app, &state);
 }
 
 fn main() {
-    let state = Arc::new(Mutex::new(State { nodes: vec![] }));
+    let state = Arc::new(Mutex::new(State { nodes: HashMap::new() }));
 
     tauri::Builder::default()
         .manage(state)
@@ -154,6 +151,7 @@ fn main() {
             add_averager,
             add_multiplier,
             calculate,
+            connect,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
