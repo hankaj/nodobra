@@ -12,13 +12,16 @@ import Board from "./components/Board";
 function App() {
   let [nodes, setNodes] = useState({});
   let [result, setResult] = useState("");
+  let [lastOpenDir, setLastOpenDir] = useState(null);
 
   const addLoadData = async () => {
     const selected = await open({
       multiple: false,
+      defaultPath: lastOpenDir || undefined,
     });
 
     if (selected != null) {
+      setLastOpenDir(selected);
       invoke("add_loader", { filePath: selected });
     }
   };
