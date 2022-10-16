@@ -1,5 +1,27 @@
+import { open } from "@tauri-apps/api/dialog";
+import { invoke } from "@tauri-apps/api/tauri";
+import { useState } from "react";
+
 function LoadData({ columns, uuid, name }) {
-  const columnsFormatted = columns.map((column) => `'${column}'`).join(", ");
+  let [lastOpenDir, setLastOpenDir] = useState(null);
+
+  const columnsFormatted = columns
+    ? columns.map((column) => `'${column}'`).join(", ")
+    : "";
+
+  const onClick = async (e) => {
+    const path = await open({
+      multiple: false,
+      defaultPath: lastOpenDir || undefined,
+    });
+
+    if (path != null) {
+      setLastOpenDir(path);
+      const patch = { uuid, kind: "load_data", data: { path } };
+
+      invoke("update_node", { patch });
+    }
+  };
 
   return (
     <div
@@ -11,6 +33,8 @@ function LoadData({ columns, uuid, name }) {
       }}
     >
       <pre>{`LOAD DATA\n---\nname: '${name}'\ncolumns: ${columnsFormatted}`}</pre>
+      <pre>file: </pre>
+      <button onClick={onClick}>load csv</button>
     </div>
   );
 }

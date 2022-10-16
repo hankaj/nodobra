@@ -1,7 +1,6 @@
 import "./App.css";
 import { invoke } from "@tauri-apps/api/tauri";
 import { listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/api/dialog";
 import { useEffect, useState } from "react";
 
 import Board from "./components/Board";
@@ -9,21 +8,10 @@ import Board from "./components/Board";
 function App() {
   let [nodes, setNodes] = useState({});
   let [result, setResult] = useState("");
-  let [lastOpenDir, setLastOpenDir] = useState(null);
 
-  const addLoadData = async () => {
-    const selected = await open({
-      multiple: false,
-      defaultPath: lastOpenDir || undefined,
-    });
-
-    if (selected != null) {
-      setLastOpenDir(selected);
-      invoke("add_loader", { filePath: selected });
-    }
-  };
-  const addMultiply = async () => invoke("add_multiplier");
-  const addAverage = async () => invoke("add_averager");
+  const addLoadData = async () => invoke("add_load_data");
+  const addMultiply = async () => invoke("add_multiply");
+  const addSum = async () => invoke("add_sum");
 
   const calculate = async (e) => {
     const uuid = document.getElementById("node-selection").value;
@@ -43,9 +31,9 @@ function App() {
         setResult(event.payload.meta + "\n" + event.payload.result);
       });
 
-      // Putting `invoke("get_nodes")` here causes infinite update loop.
+      invoke("get_nodes");
     })();
-  });
+  }, []);
 
   return (
     <div
@@ -53,36 +41,47 @@ function App() {
       style={{
         padding: "1rem",
         display: "flex",
-        flexDirection: "column",
+        flexDirection: "row",
         width: "100%",
         height: "100%",
       }}
     >
-      <Board nodes={nodes} />
-      <pre>{result}</pre>
-      <div style={{ display: "flex", flexDirection: "row" }}>
-        <button onClick={addLoadData}>load data</button>
-        <button onClick={addMultiply}>multiply</button>
-        <button onClick={addAverage}>average</button>
+      <div style={{ flex: 0.8, height: "100%" }}>
+        <Board nodes={nodes} />
       </div>
       <div
         style={{
           display: "flex",
-          flexDirection: "row",
-          justifySelf: "flex-end",
+          flexDirection: "column",
+          flex: 0.2,
+          padding: "1rem",
         }}
       >
-        <button onClick={calculate}>calculate</button>
-        <select id="node-selection">
-          <option value="" disabled selected hidden>
-            select node
-          </option>
-          {Object.entries(nodes).map(([uuid, node], i) => (
-            <option value={uuid} key={i}>
-              {node.data.name}
+        <div style={{ display: "flex", flexDirection: "row" }}>
+          <button onClick={addLoadData}>load data</button>
+          <button onClick={addMultiply}>multiply</button>
+          <button onClick={addSum}>sum</button>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "row",
+            justifySelf: "flex-end",
+          }}
+        >
+          <button onClick={calculate}>calculate</button>
+          <select id="node-selection">
+            <option value="" disabled selected hidden>
+              select node
             </option>
-          ))}
-        </select>
+            {Object.entries(nodes).map(([uuid, node], i) => (
+              <option value={uuid} key={i}>
+                {node.data.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <pre>{result}</pre>
       </div>
     </div>
   );

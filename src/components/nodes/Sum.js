@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/tauri";
 
-function Average({ name, uuid, nodes, source }) {
+function Sum({ name, uuid, nodes, source }) {
   const onSelect = (e) => {
     invoke("connect", { nodeUuid: uuid, sourceUuid: e.target.value });
   };
@@ -16,7 +16,7 @@ function Average({ name, uuid, nodes, source }) {
         margin: "0.5rem",
       }}
     >
-      <pre>{`AVERAGE\n---\nname: '${name}'`}</pre>
+      <pre>{`SUM\n---\nname: '${name}'`}</pre>
       <div style={{ display: "flex", flexDirection: "row" }}>
         <pre>source: </pre>
         <select onChange={onSelect} style={{ width: "fit-content" }}>
@@ -36,4 +36,4 @@ function Average({ name, uuid, nodes, source }) {
   );
 }
 
-export default Average;
+export default Sum;

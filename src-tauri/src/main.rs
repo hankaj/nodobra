@@ -12,10 +12,14 @@ use std::{
 use tauri::{self, Manager};
 use uuid::Uuid as UUID;
 
+use env_logger;
+use log;
+use serde_json;
+
 mod node;
 mod serialization;
 
-use node::{nodes::*, Node, NodePatch, NodePatchWrapper};
+use node::*;
 use serialization::*;
 
 #[derive(Serialize, Debug)]
@@ -41,15 +45,17 @@ fn show_nodes(app: &tauri::AppHandle, state: &State) {
 }
 
 #[tauri::command]
-fn add_loader(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle, file_path: String) {
+fn add_load_data(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle) {
+    log::info!("command: add `load data`");
     let mut state = state.lock().unwrap();
-    state.add_node(Node::load_data(file_path));
+    state.add_node(Node::load_data());
 
     show_nodes(&app, &state);
 }
 
 #[tauri::command]
-fn add_multiplier(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle) {
+fn add_multiply(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle) {
+    log::info!("command: add `multiply`");
     let mut state = state.lock().unwrap();
     state.add_node(Node::multiply());
 
@@ -57,9 +63,10 @@ fn add_multiplier(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle)
 }
 
 #[tauri::command]
-fn add_averager(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle) {
+fn add_sum(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle) {
+    log::info!("command: add `sum`");
     let mut state = state.lock().unwrap();
-    state.add_node(Node::average());
+    state.add_node(Node::sum());
 
     show_nodes(&app, &state);
 }
@@ -69,7 +76,7 @@ fn apply_processing(nodes: &HashMap<UUID, Node>, uuid: UUID) -> Option<DataFrame
     let node = &nodes[&uuid];
 
     match node {
-        Node::LoadData(LoadData { df, .. }) => return Some(df.clone()),
+        Node::LoadData(LoadData { df, .. }) => return df.clone(),
         Node::Multiply(Multiply { source, times, .. }) => source
             .and_then(|source| times.map(|times| (source, times)))
             .and_then(|(source, times)| {
@@ -79,7 +86,7 @@ fn apply_processing(nodes: &HashMap<UUID, Node>, uuid: UUID) -> Option<DataFrame
                     return df;
                 })
             }),
-        Node::Average(Average { source, .. }) => {
+        Node::Sum(Sum { source, .. }) => {
             source.and_then(|source| apply_processing(nodes, source).map(|df| df.sum()))
         }
     }
@@ -87,8 +94,8 @@ fn apply_processing(nodes: &HashMap<UUID, Node>, uuid: UUID) -> Option<DataFrame
 
 #[tauri::command]
 fn calculate(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle, uuid: String) {
+    log::info!("command: calculate");
     let mut state = state.lock().unwrap();
-    dbg!(&uuid);
 
     let result = apply_processing(&state.nodes, UUID::parse_str(&uuid).unwrap());
 
@@ -103,6 +110,8 @@ fn connect(
     source_uuid: String,
     node_uuid: String,
 ) {
+    log::info!("command: connect {} to {}", source_uuid, node_uuid);
+
     let mut state = state.lock().unwrap();
 
     let source_uuid = UUID::parse_str(&source_uuid).unwrap();
@@ -113,18 +122,18 @@ fn connect(
         Node::Multiply(Multiply { ref mut source, .. }) => {
             *source = Some(source_uuid);
         }
-        Node::Average(Average { ref mut source, .. }) => {
+        Node::Sum(Sum { ref mut source, .. }) => {
             *source = Some(source_uuid);
         }
     }
-
-    dbg!(&state.nodes);
 
     show_nodes(&app, &state);
 }
 
 #[tauri::command]
 fn get_nodes(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle) {
+    log::info!("command: get nodes");
+
     let mut state = state.lock().unwrap();
 
     show_nodes(&app, &state);
@@ -136,6 +145,11 @@ fn update_node(
     app: tauri::AppHandle,
     patch: NodePatchWrapper,
 ) {
+    log::info!(
+        "command: update node with {}",
+        serde_json::to_string_pretty(&patch).unwrap()
+    );
+
     let NodePatchWrapper { uuid, inner: patch } = patch;
     let mut state = state.lock().unwrap();
 
@@ -145,23 +159,23 @@ fn update_node(
         Ok(node) => {
             state.nodes.insert(uuid, node);
         }
-        Err(e) => {
-            dbg!(e);
-        }
+        Err(e) => log::error!("{}", e),
     }
 
     show_nodes(&app, &state);
 }
 
 fn main() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
     let state = Arc::new(Mutex::new(State::new()));
 
     tauri::Builder::default()
         .manage(state)
         .invoke_handler(tauri::generate_handler![
-            add_loader,
-            add_averager,
-            add_multiplier,
+            add_load_data,
+            add_sum,
+            add_multiply,
             calculate,
             connect,
             get_nodes,
