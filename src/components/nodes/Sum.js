@@ -1,4 +1,6 @@
 import { invoke } from "@tauri-apps/api/tauri";
+import Node from "./Node";
+import SourcePicker from "./SourcePicker";
 
 function Sum({ name, uuid, nodes, source }) {
   const onSelect = (e) => {
@@ -6,33 +8,9 @@ function Sum({ name, uuid, nodes, source }) {
   };
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        width: "fit-content",
-        border: "1px solid black",
-        padding: "0.5rem",
-        margin: "0.5rem",
-      }}
-    >
-      <pre>{`SUM\n---\nname: '${name}'`}</pre>
-      <div style={{ display: "flex", flexDirection: "row" }}>
-        <pre>source: </pre>
-        <select onChange={onSelect} style={{ width: "fit-content" }}>
-          <option value="" disabled selected hidden>
-            select source
-          </option>
-          {Object.entries(nodes)
-            .filter(([nodeUuid, _]) => nodeUuid !== uuid)
-            .map(([uuid, node], i) => (
-              <option value={uuid} key={i}>
-                {node.data.name}
-              </option>
-            ))}
-        </select>
-      </div>
-    </div>
+    <Node title="SUM" name={name}>
+      <SourcePicker uuid={uuid} nodes={nodes} onSelect={onSelect} />
+    </Node>
   );
 }
 

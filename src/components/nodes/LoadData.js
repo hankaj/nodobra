@@ -1,6 +1,8 @@
 import { open } from "@tauri-apps/api/dialog";
 import { invoke } from "@tauri-apps/api/tauri";
 import { useState } from "react";
+import Field from "./Field";
+import Node from "./Node";
 
 function LoadData({ columns, uuid, name }) {
   let [lastOpenDir, setLastOpenDir] = useState(null);
@@ -24,18 +26,12 @@ function LoadData({ columns, uuid, name }) {
   };
 
   return (
-    <div
-      style={{
-        border: "1px solid black",
-        width: "fit-content",
-        padding: "0.5rem",
-        margin: "0.5rem",
-      }}
-    >
-      <pre>{`LOAD DATA\n---\nname: '${name}'\ncolumns: ${columnsFormatted}`}</pre>
-      <pre>file: </pre>
-      <button onClick={onClick}>load csv</button>
-    </div>
+    <Node title="LOAD DATA" name={name}>
+      <Field name="columns">{`${columnsFormatted}`}</Field>
+      <Field name="file">
+        <button onClick={onClick}>load csv</button>
+      </Field>
+    </Node>
   );
 }
 
