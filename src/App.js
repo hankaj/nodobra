@@ -58,7 +58,7 @@ function App() {
         }}
       >
         <div style={{ display: "flex", flexDirection: "row" }}>
-          <button onClick={addLoadData}>load data</button>
+          <button onClick={addLoadData}>load csv</button>
           <button onClick={addMultiply}>multiply</button>
           <button onClick={addSum}>sum</button>
         </div>

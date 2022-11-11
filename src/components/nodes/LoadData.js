@@ -26,7 +26,7 @@ function LoadData({ columns, uuid, name }) {
   };
 
   return (
-    <Node title="LOAD DATA" name={name}>
+    <Node title="LOAD CSV" name={name}>
       <Field name="columns">{`${columnsFormatted}`}</Field>
       <Field name="file">
         <button onClick={onClick}>load csv</button>
