@@ -16,22 +16,41 @@ function App() {
   const calculate = async (e) => {
     const uuid = document.getElementById("node-selection").value;
     console.log(`calculating ${uuid}`);
-    invoke("calculate", { uuid });
+    invoke("calculate", { nodeId: uuid });
   };
 
   useEffect(() => {
     (async () => {
-      await listen("show_nodes", (event) => {
-        console.log("got `show_nodes`");
-        setNodes(event.payload);
-      });
+      const handles = [];
 
-      await listen("show_result", (event) => {
-        console.log("got `show_result`");
-        setResult(event.payload.meta + "\n" + event.payload.result);
-      });
+      handles.push(
+        await listen("update_state", (event) => {
+          console.log("got `update_state`");
+          setNodes(event.payload.nodes);
+        })
+      );
+
+      handles.push(
+        await listen("show_result", (event) => {
+          console.log("got `show_result`");
+          console.log(event);
+          setResult(event.payload.meta + "\n" + event.payload.result);
+        })
+      );
+
+      handles.push(
+        await listen("error", (event) => {
+          console.log("got `error`");
+          console.log(event);
+          setResult(event.payload.message);
+        })
+      );
 
       invoke("get_nodes");
+
+      return () => {
+        handles.forEach((unlisten) => unlisten());
+      };
     })();
   }, []);
 
@@ -76,7 +95,7 @@ function App() {
             </option>
             {Object.entries(nodes).map(([uuid, node], i) => (
               <option value={uuid} key={i}>
-                {node.data.name}
+                {node.name}
               </option>
             ))}
           </select>

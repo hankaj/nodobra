@@ -11,7 +11,7 @@ function SourcePicker({ nodes, onSelect, uuid }) {
           .filter(([nodeUuid, _]) => nodeUuid !== uuid)
           .map(([uuid, node], i) => (
             <option value={uuid} key={i}>
-              {node.data.name}
+              {node.name}
             </option>
           ))}
       </select>

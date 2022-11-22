@@ -4,7 +4,7 @@ import SourcePicker from "./SourcePicker";
 
 function Sum({ name, uuid, nodes, source }) {
   const onSelect = (e) => {
-    invoke("connect", { nodeUuid: uuid, sourceUuid: e.target.value });
+    invoke("add_edge", { destination: uuid, source: e.target.value });
   };
 
   return (

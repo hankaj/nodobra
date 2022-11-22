@@ -2,13 +2,18 @@
     all(not(debug_assertions), target_os = "windows"),
     windows_subsystem = "windows"
 )]
+#![feature(result_flattening)]
 
+use names::Generator;
 use polars::prelude::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::{
-    collections::HashMap,
+    collections::{hash_map::DefaultHasher, HashMap},
+    hash::{Hash, Hasher},
     sync::{Arc, Mutex},
 };
+
 use tauri::{self, Manager};
 use uuid::Uuid as UUID;
 
@@ -16,118 +21,296 @@ use env_logger;
 use log;
 use serde_json;
 
+mod error;
 mod node;
 mod serialization;
 
+use error::Error;
 use node::*;
 use serialization::*;
 
+// TODO Replace all `uuid`s with `node_id`s, because the UUIDs may be used for smth else later.
+
 #[derive(Serialize, Debug)]
-#[serde(transparent)]
+struct NodeState {
+    name: String,
+
+    #[serde(flatten)]
+    settings: NodeSettings,
+
+    #[serde(skip)]
+    // results: Option<Result<(DataFrame, u64), Error>>,
+    results: Option<Result<DataFrame, Error>>,
+}
+
+#[derive(Serialize, Debug)]
 struct State {
-    nodes: HashMap<UUID, Node>,
+    nodes: HashMap<UUID, NodeState>,
+
+    /// Edge map, where the key is the `destination` and the value is the `source`.
+    edges: HashMap<UUID, UUID>,
 }
 
 impl State {
     fn new() -> Self {
         Self {
             nodes: HashMap::new(),
+            edges: HashMap::new(),
         }
     }
 
-    fn add_node(&mut self, node: Node) {
-        self.nodes.insert(UUID::new_v4(), node);
+    fn add_node(&mut self, settings: NodeSettings) -> UUID {
+        let uuid = UUID::new_v4();
+        let name = Generator::default().next().unwrap();
+
+        self.nodes.insert(
+            uuid,
+            NodeState {
+                settings,
+                name,
+                results: None,
+            },
+        );
+
+        uuid
+    }
+
+    fn add_edge(&mut self, destination: UUID, source: UUID) {
+        self.edges.insert(destination, source);
     }
 }
 
-fn show_nodes(app: &tauri::AppHandle, state: &State) {
-    app.emit_all("show_nodes", state).unwrap();
+fn emit_state(app: &tauri::AppHandle, state: &State) {
+    app.emit_all("update_state", state).unwrap();
+}
+
+fn emit_error(app: &tauri::AppHandle, error: Error) {
+    log::error!("error: {}", serde_json::to_string_pretty(&error).unwrap());
+
+    app.emit_all("error", error).unwrap();
 }
 
 #[tauri::command]
 fn add_load_data(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle) {
     log::info!("command: add `load data`");
-    let mut state = state.lock().unwrap();
-    state.add_node(Node::load_data());
 
-    show_nodes(&app, &state);
+    let mut state = state.lock().unwrap();
+
+    let uuid = state.add_node(NodeSettings::load_data());
+
+    emit_state(&app, &state);
 }
 
 #[tauri::command]
 fn add_multiply(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle) {
     log::info!("command: add `multiply`");
-    let mut state = state.lock().unwrap();
-    state.add_node(Node::multiply());
 
-    show_nodes(&app, &state);
+    let mut state = state.lock().unwrap();
+
+    let uuid = state.add_node(NodeSettings::multiply());
+
+    emit_state(&app, &state);
 }
 
 #[tauri::command]
 fn add_sum(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle) {
     log::info!("command: add `sum`");
-    let mut state = state.lock().unwrap();
-    state.add_node(Node::sum());
 
-    show_nodes(&app, &state);
+    let mut state = state.lock().unwrap();
+
+    let uuid = state.add_node(NodeSettings::sum());
+
+    emit_state(&app, &state);
 }
 
-fn apply_processing(nodes: &HashMap<UUID, Node>, uuid: UUID) -> Option<DataFrame> {
-    println!("processing {}", uuid);
+fn compute_input_hash(settings: &NodeSettings, input_hashes: &[u64]) -> u64 {
+    let mut state = DefaultHasher::new();
+    settings.hash(&mut state);
+
+    for input_hash in input_hashes {
+        input_hash.hash(&mut state);
+    }
+
+    state.finish()
+}
+
+fn compute_node(
+    nodes: &HashMap<UUID, NodeState>,
+    edges: &HashMap<UUID, UUID>,
+    uuid: UUID,
+) -> Result<DataFrame, Error> {
+    log::info!("action: computing `{}`", uuid);
+
     let node = &nodes[&uuid];
+    // let should_be_computed = if let Some((_, prev_hash)) = node.results {
+    //     match node.settings {
+    //         NodeSettings::LoadData(settings) => {
+    //             prev_hash != compute_input_hash(settings, &[])
+    //         },
+    //         NodeSettings::Multiply(settings) => {
+    //             if let Some((_, input_hash)) = edges.get(&uuid).and_then(|node| node.results) {
+    //                 prev_hash != compute_input_hash(settings, &[input_hash])
+    //             } else {
+    //                 true
+    //             }
+    //         },
+    //         NodeSettings::Sum(settings) => {
+    //             if let Some((_, input_hash)) = edges.get(&uuid).and_then(|node| node.results) {
+    //                 prev_hash != compute_input_hash(settings, &[input_hash])
+    //             } else {
+    //                 true
+    //             }
+    //         },
+    //     }
+    // } else {
+    //     true
+    // };
 
-    match node {
-        Node::LoadData(LoadData { df, .. }) => return df.clone(),
-        Node::Multiply(Multiply { source, times, .. }) => source
-            .and_then(|source| times.map(|times| (source, times)))
-            .and_then(|(source, times)| {
-                apply_processing(nodes, source).map(|mut df| {
-                    df.replace_at_idx(0, (&df[0]) * times).unwrap();
+    match &node.settings {
+        NodeSettings::LoadData(LoadData { path, separator }) => {
+            let path = path.as_ref().ok_or(Error::MissingFieldData {
+                node_id: uuid,
+                field: "path".into(),
+            })?;
+            let separator = separator.as_ref().ok_or(Error::MissingFieldData {
+                node_id: uuid,
+                field: "separator".into(),
+            })?;
+            let df = CsvReader::from_path(path)
+                .unwrap()
+                .with_delimiter(separator.chars().next().unwrap() as u8)
+                .has_header(true)
+                .finish()
+                .unwrap();
 
-                    return df;
-                })
-            }),
-        Node::Sum(Sum { source, .. }) => {
-            source.and_then(|source| apply_processing(nodes, source).map(|df| df.sum()))
+            return Ok(df);
+        }
+        NodeSettings::Multiply(Multiply { times }) => {
+            let input_node_id = edges.get(&uuid).ok_or(Error::MissingFieldData {
+                node_id: uuid,
+                field: "source".into(),
+            })?;
+            let input_node = nodes.get(input_node_id).ok_or(Error::InternalError)?;
+
+            // let (input_df, _input_hash) = input_node
+            let input_df = input_node
+                .results
+                .as_ref()
+                .ok_or(Error::MissingResults {
+                    node_id: *input_node_id,
+                })?
+                .as_ref()
+                .map_err(|_| Error::MissingResults {
+                    node_id: *input_node_id,
+                })?;
+            let times = times.ok_or(Error::MissingFieldData {
+                node_id: uuid,
+                field: "times".into(),
+            })?; // Missing field `times`.
+
+            let mut input_df = input_df.clone();
+            input_df.replace_at_idx(0, (&input_df[0]) * times).unwrap();
+
+            return Ok(input_df);
+        }
+        NodeSettings::Sum(Sum {}) => {
+            let input_node_id = edges.get(&uuid).ok_or(Error::MissingFieldData {
+                node_id: uuid,
+                field: "source".into(),
+            })?;
+            let input_node = nodes.get(input_node_id).ok_or(Error::InternalError)?;
+
+            // let (input_df, _input_hash) = input_node
+            let input_df = input_node
+                .results
+                .as_ref()
+                .ok_or(Error::MissingResults {
+                    node_id: *input_node_id,
+                })?
+                .as_ref()
+                .map_err(|_| Error::MissingResults {
+                    node_id: *input_node_id,
+                })?;
+
+            return Ok(input_df.clone().sum());
+        }
+    }
+}
+
+fn calculate_inner<'a>(state: &'a mut State, node_id: UUID) -> Result<&'a DataFrame, Error> {
+    let mut execution_queue = vec![];
+    let mut layer = vec![node_id];
+
+    loop {
+        let next_layer = layer.iter().filter_map(|node_id| state.edges.get(node_id)).collect::<Vec<_>>();
+        
+        execution_queue.extend(layer.drain(..));
+        layer.extend(next_layer);
+
+        if layer.is_empty() {
+            break;
+        }
+    }
+
+    for node_id in execution_queue {
+        let results = compute_node(&state.nodes, &state.edges, node_id);
+        let node_state = state.nodes.get_mut(&node_id).ok_or(Error::InternalError)?;
+        node_state.results = Some(results);
+    }
+
+    let result = state
+        .nodes
+        .get(&node_id)
+        .ok_or(Error::InternalError)?
+        .results
+        .as_ref()
+        .ok_or(Error::InternalError)?
+        .as_ref()
+        .map_err(|err| err.clone());
+
+    return result;
+}
+
+#[tauri::command]
+fn calculate(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle, node_id: UUID) {
+    log::info!("command: calculate `{}`", node_id);
+
+    let mut state = state.lock().unwrap();
+
+    match calculate_inner(&mut state, node_id) {
+        Ok(df) => {
+            app.emit_all(
+                "show_result",
+                json!({
+                    "result": df.to_string(),
+                    "node_id": node_id,
+                }),
+            )
+            .unwrap();
+        }
+        Err(err) => {
+            app.emit_all("error", json!({ "message": format!("{:?}", err) }))
+                .unwrap();
         }
     }
 }
 
 #[tauri::command]
-fn calculate(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle, uuid: String) {
-    log::info!("command: calculate");
-    let mut state = state.lock().unwrap();
-
-    let result = apply_processing(&state.nodes, UUID::parse_str(&uuid).unwrap());
-
-    app.emit_all("show_result", ResultSerializer { result, meta: uuid })
-        .unwrap();
-}
-
-#[tauri::command]
-fn connect(
+fn add_edge(
     state: tauri::State<Arc<Mutex<State>>>,
     app: tauri::AppHandle,
-    source_uuid: String,
-    node_uuid: String,
+    source: String,
+    destination: String,
 ) {
-    log::info!("command: connect {} to {}", source_uuid, node_uuid);
+    log::info!("command: add edge from `{}` to `{}`", source, destination);
 
     let mut state = state.lock().unwrap();
 
-    let source_uuid = UUID::parse_str(&source_uuid).unwrap();
-    let node_uuid = UUID::parse_str(&node_uuid).unwrap();
+    let source = UUID::parse_str(&source).unwrap();
+    let destination = UUID::parse_str(&destination).unwrap();
+    state.add_edge(destination, source);
 
-    match state.nodes.get_mut(&node_uuid).unwrap() {
-        Node::LoadData(LoadData { .. }) => {}
-        Node::Multiply(Multiply { ref mut source, .. }) => {
-            *source = Some(source_uuid);
-        }
-        Node::Sum(Sum { ref mut source, .. }) => {
-            *source = Some(source_uuid);
-        }
-    }
-
-    show_nodes(&app, &state);
+    emit_state(&app, &state);
 }
 
 #[tauri::command]
@@ -136,33 +319,36 @@ fn get_nodes(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle) {
 
     let mut state = state.lock().unwrap();
 
-    show_nodes(&app, &state);
+    emit_state(&app, &state);
 }
 
 #[tauri::command]
 fn update_node(
     state: tauri::State<Arc<Mutex<State>>>,
     app: tauri::AppHandle,
-    patch: NodePatchWrapper,
+    node_id: UUID,
+    settings: NodeSettings,
 ) {
     log::info!(
-        "command: update node with {}",
-        serde_json::to_string_pretty(&patch).unwrap()
+        "command: update node `{}` with:\n{}",
+        node_id,
+        serde_json::to_string_pretty(&settings).unwrap()
     );
 
-    let NodePatchWrapper { uuid, inner: patch } = patch;
     let mut state = state.lock().unwrap();
 
-    let node = (*state.nodes.get(&uuid).unwrap()).clone();
+    let node_state = state.nodes.get_mut(&node_id).unwrap();
 
-    match patch.patch_node(node) {
-        Ok(node) => {
-            state.nodes.insert(uuid, node);
-        }
-        Err(e) => log::error!("{}", e),
+    if node_state.settings.matches_kind(&settings) {
+        node_state.settings = settings.clone();
+
+        emit_state(&app, &state);
+    } else {
+        emit_error(
+            &app,
+            Error::SettingsUpdateKindMismatch { node_id, settings },
+        );
     }
-
-    show_nodes(&app, &state);
 }
 
 fn main() {
@@ -177,10 +363,16 @@ fn main() {
             add_sum,
             add_multiply,
             calculate,
-            connect,
+            add_edge,
             get_nodes,
             update_node,
         ])
+        .setup(|app| {
+            #[cfg(debug_assertions)]
+            app.get_window("main").unwrap().open_devtools();
+
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

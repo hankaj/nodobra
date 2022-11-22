@@ -13,13 +13,17 @@ function Board({ nodes }) {
         padding: "1rem",
       }}
     >
-      {Object.entries(nodes).map(([uuid, { kind, data }], i) => {
+      {Object.entries(nodes).map(([uuid, { kind, name, data }], i) => {
         if (kind === "load_data") {
-          return <LoadData {...data} uuid={uuid} key={i} />;
+          return <LoadData {...data} name={name} uuid={uuid} key={i} />;
         } else if (kind === "multiply") {
-          return <Multiply {...data} uuid={uuid} nodes={nodes} key={i} />;
+          return (
+            <Multiply {...data} name={name} uuid={uuid} nodes={nodes} key={i} />
+          );
         } else if (kind === "sum") {
-          return <Sum {...data} uuid={uuid} nodes={nodes} key={i} />;
+          return (
+            <Sum {...data} name={name} uuid={uuid} nodes={nodes} key={i} />
+          );
         }
 
         return null;
