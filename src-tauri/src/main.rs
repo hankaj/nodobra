@@ -40,7 +40,7 @@ struct NodeState {
 
     #[serde(skip)]
     // results: Option<Result<(DataFrame, u64), Error>>,
-    results: Option<Result<DataFrame, Error>>,
+    results: Option<Result<(DataFrame, u64), Error>>,
 }
 
 #[derive(Serialize, Debug)]
@@ -142,29 +142,6 @@ fn compute_node(
     log::info!("action: computing `{}`", uuid);
 
     let node = &nodes[&uuid];
-    // let should_be_computed = if let Some((_, prev_hash)) = node.results {
-    //     match node.settings {
-    //         NodeSettings::LoadData(settings) => {
-    //             prev_hash != compute_input_hash(settings, &[])
-    //         },
-    //         NodeSettings::Multiply(settings) => {
-    //             if let Some((_, input_hash)) = edges.get(&uuid).and_then(|node| node.results) {
-    //                 prev_hash != compute_input_hash(settings, &[input_hash])
-    //             } else {
-    //                 true
-    //             }
-    //         },
-    //         NodeSettings::Sum(settings) => {
-    //             if let Some((_, input_hash)) = edges.get(&uuid).and_then(|node| node.results) {
-    //                 prev_hash != compute_input_hash(settings, &[input_hash])
-    //             } else {
-    //                 true
-    //             }
-    //         },
-    //     }
-    // } else {
-    //     true
-    // };
 
     match &node.settings {
         NodeSettings::LoadData(LoadData { path, separator }) => {
@@ -192,8 +169,7 @@ fn compute_node(
             })?;
             let input_node = nodes.get(input_node_id).ok_or(Error::InternalError)?;
 
-            // let (input_df, _input_hash) = input_node
-            let input_df = input_node
+            let (input_df, _input_hash) = input_node
                 .results
                 .as_ref()
                 .ok_or(Error::MissingResults {
@@ -220,8 +196,7 @@ fn compute_node(
             })?;
             let input_node = nodes.get(input_node_id).ok_or(Error::InternalError)?;
 
-            // let (input_df, _input_hash) = input_node
-            let input_df = input_node
+            let (input_df, _input_hash) = input_node
                 .results
                 .as_ref()
                 .ok_or(Error::MissingResults {
@@ -237,7 +212,7 @@ fn compute_node(
     }
 }
 
-fn calculate_inner<'a>(state: &'a mut State, node_id: UUID) -> Result<&'a DataFrame, Error> {
+fn calculate_inner(state: &mut State, node_id: UUID) -> Result<(), Error> {
     let mut execution_queue = vec![];
     let mut layer = vec![node_id];
 
@@ -252,23 +227,44 @@ fn calculate_inner<'a>(state: &'a mut State, node_id: UUID) -> Result<&'a DataFr
         }
     }
 
-    for node_id in execution_queue {
-        let results = compute_node(&state.nodes, &state.edges, node_id);
-        let node_state = state.nodes.get_mut(&node_id).ok_or(Error::InternalError)?;
-        node_state.results = Some(results);
+
+    for node_id in execution_queue.into_iter().rev() {
+        let new_hash = {
+            let mut hasher = DefaultHasher::new();
+            
+            if let Some(result) = state.edges.get(&node_id).map(|node_id| state.nodes.get(node_id).ok_or(Error::InternalError)) {
+                let input_node = result?;
+                input_node.settings.hash(&mut hasher);
+            }
+    
+            let node = &state.nodes[&node_id];
+
+            node.settings.hash(&mut hasher);
+    
+            hasher.finish()
+        };
+
+        let node = &state.nodes[&node_id];
+
+        let has_up_to_date_results = match &node.results {
+            Some(Ok((_df, prev_hash))) => {
+                new_hash == *prev_hash
+            },
+            _ => false,
+        };
+
+        if !has_up_to_date_results {
+            log::info!("`{}` does not have up to date results, computing.", node_id);
+            let results = compute_node(&state.nodes, &state.edges, node_id);
+            let node_state = state.nodes.get_mut(&node_id).ok_or(Error::InternalError)?;
+            node_state.results = Some(results.map(|df| (df, new_hash)));
+        } else {
+            log::info!("`{}` has up to date results, no need to compute.", node_id);
+            // Do nothing, the results are fresh.
+        }
     }
 
-    let result = state
-        .nodes
-        .get(&node_id)
-        .ok_or(Error::InternalError)?
-        .results
-        .as_ref()
-        .ok_or(Error::InternalError)?
-        .as_ref()
-        .map_err(|err| err.clone());
-
-    return result;
+    Ok(())
 }
 
 #[tauri::command]
@@ -277,7 +273,22 @@ fn calculate(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle, node
 
     let mut state = state.lock().unwrap();
 
-    match calculate_inner(&mut state, node_id) {
+    let result = calculate_inner(&mut state, node_id)
+        .and_then(|()| {
+            let (df, _hash) = state
+                .nodes
+                .get(&node_id)
+                .ok_or(Error::InternalError)?
+                .results
+                .as_ref()
+                .ok_or(Error::InternalError)?
+                .as_ref()
+                .map_err(|err| err.clone())?;
+
+            return Ok(df);
+        });
+
+    match result {
         Ok(df) => {
             app.emit_all(
                 "show_result",
