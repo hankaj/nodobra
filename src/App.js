@@ -12,6 +12,8 @@ function App() {
   const addLoadData = async () => invoke("add_load_data");
   const addMultiply = async () => invoke("add_multiply");
   const addSum = async () => invoke("add_sum");
+  const addTail = async () => invoke("add_tail");
+  const addHead = async () => invoke("add_head");
 
   const calculate = async (e) => {
     const uuid = document.getElementById("node-selection").value;
@@ -77,9 +79,12 @@ function App() {
         }}
       >
         <div style={{ display: "flex", flexDirection: "row" }}>
+          <button onClick={() => invoke("dupa")}>DUPA!</button>
           <button onClick={addLoadData}>load csv</button>
           <button onClick={addMultiply}>multiply</button>
           <button onClick={addSum}>sum</button>
+          <button onClick={addTail}>tail</button>
+          <button onClick={addHead}>head</button>
         </div>
         <div
           style={{

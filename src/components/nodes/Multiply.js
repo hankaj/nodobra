@@ -7,10 +7,6 @@ import Field from "./Field";
 function Multiply({ name, uuid, nodes, source }) {
   let [times, setTimes] = useState(null);
 
-  const onSelect = (e) => {
-    invoke("add_edge", { destination: uuid, source: e.target.value });
-  };
-
   const sendUpdate = ({ times }) => {
     const settings = { kind: "multiply", data: { times } };
 
@@ -18,14 +14,19 @@ function Multiply({ name, uuid, nodes, source }) {
   };
 
   const onUpdate = (e) => {
-    const newTimes = parseInt(e.target.value);
-    setTimes(newTimes || null);
+    let newTimes = parseInt(e.target.value);
+
+    if (isNaN(newTimes)) {
+      newTimes = 0;
+    }
+
+    setTimes(newTimes);
     sendUpdate({ times: newTimes });
   };
 
   return (
     <Node title="MULTIPLY" name={name}>
-      <SourcePicker uuid={uuid} onSelect={onSelect} nodes={nodes} />
+      <SourcePicker uuid={uuid} nodes={nodes} source={source} />
       <Field name="times">
         <input type="text" value={times} onChange={onUpdate}></input>
       </Field>

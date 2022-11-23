@@ -123,6 +123,28 @@ fn add_sum(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle) {
     emit_state(&app, &state);
 }
 
+#[tauri::command]
+fn add_tail(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle) {
+    log::info!("command: add `tail`");
+
+    let mut state = state.lock().unwrap();
+
+    let uuid = state.add_node(NodeSettings::tail());
+
+    emit_state(&app, &state);
+}
+
+#[tauri::command]
+fn add_head(state: tauri::State<Arc<Mutex<State>>>, app: tauri::AppHandle) {
+    log::info!("command: add `head`");
+
+    let mut state = state.lock().unwrap();
+
+    let uuid = state.add_node(NodeSettings::head());
+
+    emit_state(&app, &state);
+}
+
 fn compute_input_hash(settings: &NodeSettings, input_hashes: &[u64]) -> u64 {
     let mut state = DefaultHasher::new();
     settings.hash(&mut state);
@@ -189,6 +211,60 @@ fn compute_node(
 
             return Ok(input_df);
         }
+        NodeSettings::Tail(Tail { row_count }) => {
+            let input_node_id = edges.get(&uuid).ok_or(Error::MissingFieldData {
+                node_id: uuid,
+                field: "source".into(),
+            })?;
+            let input_node = nodes.get(input_node_id).ok_or(Error::InternalError)?;
+
+            let (input_df, _input_hash) = input_node
+                .results
+                .as_ref()
+                .ok_or(Error::MissingResults {
+                    node_id: *input_node_id,
+                })?
+                .as_ref()
+                .map_err(|_| Error::MissingResults {
+                    node_id: *input_node_id,
+                })?;
+            // let row_count = row_count.ok_or(Error::MissingFieldData {
+            //     node_id: uuid,
+            //     field: "row_count".into(),
+            // })?;
+
+            let mut input_df = input_df.clone();
+            let output_df = input_df.tail(*row_count);
+
+            return Ok(output_df);
+        }
+        NodeSettings::Head(Head { row_count }) => {
+            let input_node_id = edges.get(&uuid).ok_or(Error::MissingFieldData {
+                node_id: uuid,
+                field: "source".into(),
+            })?;
+            let input_node = nodes.get(input_node_id).ok_or(Error::InternalError)?;
+
+            let (input_df, _input_hash) = input_node
+                .results
+                .as_ref()
+                .ok_or(Error::MissingResults {
+                    node_id: *input_node_id,
+                })?
+                .as_ref()
+                .map_err(|_| Error::MissingResults {
+                    node_id: *input_node_id,
+                })?;
+            // let row_count = row_count.ok_or(Error::MissingFieldData {
+            //     node_id: uuid,
+            //     field: "row_count".into(),
+            // })?;
+
+            let mut input_df = input_df.clone();
+            let output_df = input_df.head(*row_count);
+
+            return Ok(output_df);
+        }
         NodeSettings::Sum(Sum {}) => {
             let input_node_id = edges.get(&uuid).ok_or(Error::MissingFieldData {
                 node_id: uuid,
@@ -226,7 +302,6 @@ fn calculate_inner(state: &mut State, node_id: UUID) -> Result<(), Error> {
             break;
         }
     }
-
 
     for node_id in execution_queue.into_iter().rev() {
         let new_hash = {
@@ -372,6 +447,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             add_load_data,
             add_sum,
+            add_tail,
+            add_head,
             add_multiply,
             calculate,
             add_edge,
