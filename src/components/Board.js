@@ -18,7 +18,7 @@ function Board({ nodes }) {
         padding: "1rem",
       }}
     >
-      {/* {Object.entries(nodes).map(([uuid, { kind, name, data }], i) => {
+      {Object.entries(nodes).map(([uuid, { kind, name, data }], i) => {
         if (kind === "load_data") {
           return <LoadData {...data} name={name} uuid={uuid} key={i} />;
         } else if (kind === "multiply") {
@@ -37,13 +37,10 @@ function Board({ nodes }) {
           return (
             <Head {...data} name={name} uuid={uuid} nodes={nodes} key={i} />
           );
-        } */}
-      <Node title="TAIL" name={"name"}>
-        <SourcePicker uuid={123} nodes={nodes} source={null} />
-        <Field name="row count (optional)">
-          <input type="text" value={1} onChange={() => {}}></input>
-        </Field>
-      </Node>
+        } else {
+          return null;
+        }
+      })}
     </div>
   );
 }
